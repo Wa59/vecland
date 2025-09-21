@@ -8,16 +8,18 @@ int get_random(int min, int max){
    return min + rand() / (RAND_MAX / (max - min + 1) + 1);
 }
 
-int engine_on     = 0;
-float engine_pwr = 0.25;
-int score         = 0;
-int gameover      = 0;
-int vector_color  = 7;
-int stars_color   = 7;
-float ship_zoom  = 2;
-//float zoom_spd = 0.025;
-float angle_spd  = 0.25;
-float angle      = 0;
+int   engine_on    = 0;
+float engine_pwr   = 0.25;
+float fuel         = 100;
+int   score        = 0;
+int   hi_score     = 0;
+int   gameover     = 0;
+int   vector_color = 7;
+int   stars_color  = 7;
+float ship_zoom    = 2;
+float zoom_spd     = 0.025;
+float angle_spd    = 0.25;
+float angle        = 0;
 
 int ship_sprite[7][2]    = {{-3,4},{3,4},{0,-3},{-3,4},{-3,4},{-3,4},{-3,4}};
 int ship_sprite_on[7][2] = {{-3,4},{3,4},{0,-3},{-3,4},{-2,4},{ 0,7},{ 2,4}};
@@ -42,14 +44,14 @@ BITMAP *buffer;
 
 void start_vars() {
 
-    clear_bitmap(buffer);
-    textprintf_ex(buffer, font, SCREEN_W/2 - 40, SCREEN_H/2  - text_height(font), 
+    /*clear_bitmap(buffer);
+    textprintf_ex(buffer, font, SCREEN_W/2 - 14*5, SCREEN_H/2  - text_height(font), 
         makecol(255,255,255), -1, "INITIALIZING...");
-    blit(buffer, screen, 0, 0, 0, 0, SCREEN_W, SCREEN_H);
-    rest(1000);
+    blit(buffer, screen, 0, 0, 0, 0, SCREEN_W, SCREEN_H);*/
+    rest(500);
 
     angle = 0;
-    ship_v[0] = get_random(0.1,1); 
+    ship_v[0] = rand()/1000000000; 
     ship_v[1] = 0; 
     platform_start = get_random(0, SCREEN_W - 20*ship_zoom); 
     platform_end   = platform_start + 20*ship_zoom;
@@ -60,7 +62,7 @@ void start_vars() {
 
     // Generate terrain
     for (int i=0; i<((SCREEN_W)/10 + 1); i++) {
-        terrain[i] = get_random(-4,4);
+        terrain[i] = get_random(-4,4) * rand()/200000000;
     }
 
     // Generate stars
@@ -73,8 +75,8 @@ void start_vars() {
     for (int i=0; i<40; i++) {
         particles_r[i][0] = 0;
         particles_r[i][1] = 0;
-        particles_v[i][0] = get_random(-5,5);
-        particles_v[i][1] = get_random(-5,5);
+        particles_v[i][0] = get_random(-1,1) * rand()/200000000;
+        particles_v[i][1] = get_random(-1,1) * rand()/200000000;
         //particles_v[i][0] = rand() % 2 == 0 ? -1 : 1;
         //particles_v[i][1] = rand() % 2 == 0 ? -1 : 1;
     }
@@ -86,13 +88,13 @@ static int play_game()
 
     while (!key[KEY_ESC] && !gameover) {
 
-        if (key[KEY_SPACE] || key[KEY_ENTER]) {
+        if ( (key[KEY_SPACE] || key[KEY_ENTER]) && (dead || landed) ) {
             start_vars();
             continue;
         }
 
         if (landed) {
-            textprintf_ex(buffer, font, SCREEN_W/2 - 40, SCREEN_H/2  - text_height(font), 
+            textprintf_ex(buffer, font, SCREEN_W/2 - 7*5, SCREEN_H/2  - text_height(font), 
                 makecol(255,255,255), -1, "LANDED!");
             blit(buffer, screen, 0, 0, 0, 0, SCREEN_W, SCREEN_H);
             rest(30);
@@ -130,13 +132,19 @@ static int play_game()
             // Calc ship velocity
             ship_v[1] += 0.05;
             if (engine_on) {
-                ship_v[0] += engine_pwr * sin(angle);
-                ship_v[1] -= engine_pwr * cos(angle);
+                fuel -= 0.125;
+                if (fuel <= 0) {
+                    fuel = 0; 
+                } else {
+                    ship_v[0] += engine_pwr * sin(angle);
+                    ship_v[1] -= engine_pwr * cos(angle);
+                }
             }
-
             // Dead ship
             if (ship_r[1] >= SCREEN_H - 25*ship_zoom) {
                 dead = 1;
+                fuel = 100;
+                score = 0;
             }
 
             // Warp
@@ -158,8 +166,13 @@ static int play_game()
                     ship_v[0] <= 0.0005 &&
                     ship_v[1] <= 0.0005 
                     ) {
+                        angle = 0;
                         landed = 1;
-                        score++;                }
+                        score++;
+                        if (score > hi_score) {
+                            hi_score = score;
+                        }
+                    }
 
             }
 
@@ -168,7 +181,7 @@ static int play_game()
             ship_r[1] += ship_v[1];
 
             // Select sprite
-            if (!engine_on) {
+            if (!engine_on || fuel == 0) {
                 memcpy(current_sprite, ship_sprite, sizeof(ship_sprite));
             } else {
                 memcpy(current_sprite, ship_sprite_on, sizeof(ship_sprite_on));
@@ -210,6 +223,7 @@ static int play_game()
 
         // Platform
         line(buffer, platform_start, SCREEN_H - 40*ship_zoom, platform_end, SCREEN_H - 40*ship_zoom, vector_color);
+        line(buffer, platform_start, SCREEN_H - 40*ship_zoom + 1, platform_end, SCREEN_H - 40*ship_zoom + 1, vector_color);
 
         // Draw ship sprite
         if (!dead) {
@@ -230,13 +244,16 @@ static int play_game()
                 particles_r[i][1] = particles_r[i][1] + particles_v[i][1];
                 putpixel(buffer, ship_r[0] + particles_r[i][0], ship_r[1] + particles_r[i][1], stars_color);
             }
-            textprintf_ex(buffer, font, SCREEN_W/2 - 40, SCREEN_H/2  - text_height(font), 
+            textprintf_ex(buffer, font, SCREEN_W/2 - 7*5, SCREEN_H/2  - text_height(font), 
                 makecol(255,255,255), -1, "CRASHED");
 
         }
 
         textprintf_ex(buffer, font, 0, SCREEN_H - 8 - text_height(font), 
-            makecol(255,255,255), -1, "Score: %d         Move ship: Arrow keys, Restart: enter/space", score);
+            makecol(255,255,255), -1, "Score: %d       Fuel: %.1f", score, fuel);
+        
+        //textprintf_ex(buffer, font, SCREEN_W - 8*44, SCREEN_H - 8 - text_height(font), 
+        //    makecol(255,255,255), -1, "Move ship: Arrow keys, Restart: enter/space");
 
         // Draw to screen
         blit(buffer, screen, 0, 0, 0, 0, SCREEN_W, SCREEN_H);
@@ -253,7 +270,10 @@ static void usage()
    printf(
       "Thanks for playing VECLAND!\n"
       "- by wa59, 2025\n"
-   );
+      "\n"
+      "Your best score was %d."
+      "\n"
+   , hi_score);
 }
 
 int main(int argc, char *argv[])
@@ -266,7 +286,7 @@ int main(int argc, char *argv[])
     install_timer();
 
     set_color_depth(8);
-    if (set_gfx_mode(GFX_VESA1, 640, 400, 0, 0) != 0) {
+    if (set_gfx_mode(GFX_VESA1, 640, 480, 0, 0) != 0) {
     //if (set_gfx_mode(GFX_VGA, 320, 200, 0, 0) != 0) {
         allegro_message("Unable to set graphics mode\n%s\n", allegro_error);
         return 1;
