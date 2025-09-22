@@ -1,4 +1,5 @@
 #include <time.h>
+#include <dos.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -6,6 +7,24 @@
 
 int get_random(int min, int max){
    return min + rand() / (RAND_MAX / (max - min + 1) + 1);
+}
+
+void speaker_freq(int hz) {
+    if (hz == 0) {
+        outportb(0x61, inportb(0x61) & 0xFC);
+        return;
+    }
+    unsigned divisor = 1193180 / hz;
+    outportb(0x43, 0xB6);
+    outportb(0x42, divisor & 0xFF);
+    outportb(0x42, divisor >> 8);
+    outportb(0x61, inportb(0x61) | 3);
+}
+void note(int freq, int ms) {
+    speaker_freq(freq);
+    rest(ms);
+    speaker_freq(0);
+    rest(20);
 }
 
 int   engine_on    = 0;
@@ -16,10 +35,11 @@ int   hi_score     = 0;
 int   gameover     = 0;
 int   vector_color = 7;
 int   stars_color  = 7;
-float ship_zoom    = 2;
+float render_scale = 1;
 float zoom_spd     = 0.025;
 float angle_spd    = 0.25;
 float angle        = 0;
+float gravity      = 0.05;
 
 int ship_sprite[7][2]    = {{-3,4},{3,4},{0,-3},{-3,4},{-3,4},{-3,4},{-3,4}};
 int ship_sprite_on[7][2] = {{-3,4},{3,4},{0,-3},{-3,4},{-2,4},{ 0,7},{ 2,4}};
@@ -44,6 +64,17 @@ BITMAP *buffer;
 
 void start_vars() {
 
+    // scaling
+    if (SCREEN_W == 320) {
+        render_scale = 1;
+    }
+    if (SCREEN_W == 640) {
+        render_scale = 2;
+    }
+    if (SCREEN_W == 800) {
+        render_scale = 2.5;
+    }
+
     /*clear_bitmap(buffer);
     textprintf_ex(buffer, font, SCREEN_W/2 - 14*5, SCREEN_H/2  - text_height(font), 
         makecol(255,255,255), -1, "INITIALIZING...");
@@ -53,8 +84,8 @@ void start_vars() {
     angle = 0;
     ship_v[0] = rand()/1000000000; 
     ship_v[1] = 0; 
-    platform_start = get_random(0, SCREEN_W - 20*ship_zoom); 
-    platform_end   = platform_start + 20*ship_zoom;
+    platform_start = get_random(0, SCREEN_W - 20*render_scale); 
+    platform_end   = platform_start + 20*render_scale;
     ship_r[0] = 8;
     ship_r[1] = 0;
     landed = 0;
@@ -62,21 +93,21 @@ void start_vars() {
 
     // Generate terrain
     for (int i=0; i<((SCREEN_W)/10 + 1); i++) {
-        terrain[i] = get_random(-4,4) * rand()/200000000;
+        terrain[i] = rand()/200000000;
     }
 
     // Generate stars
     for (int i=0; i<32; i=i+2) {
         stars[i] = get_random(0,SCREEN_W);
-        stars[i+1] = get_random(0,SCREEN_H - 30*ship_zoom);
+        stars[i+1] = get_random(0,SCREEN_H - 30*render_scale);
     }
 
     // Generate particles
     for (int i=0; i<40; i++) {
         particles_r[i][0] = 0;
         particles_r[i][1] = 0;
-        particles_v[i][0] = get_random(-1,1) * rand()/200000000;
-        particles_v[i][1] = get_random(-1,1) * rand()/200000000;
+        particles_v[i][0] = rand()/200000000 - rand()/200000000;
+        particles_v[i][1] = rand()/200000000 - rand()/200000000;
         //particles_v[i][0] = rand() % 2 == 0 ? -1 : 1;
         //particles_v[i][1] = rand() % 2 == 0 ? -1 : 1;
     }
@@ -101,8 +132,8 @@ static int play_game()
             continue;
         }
 
-        //ship_zoom = ship_zoom + zoom_spd;
-        //if (ship_zoom > 8 || ship_zoom < 1) { zoom_spd = -1 * zoom_spd; }
+        //render_scale = render_scale + zoom_spd;
+        //if (render_scale > 8 || render_scale < 1) { zoom_spd = -1 * zoom_spd; }
 
         //if (vector_color == 7) {
             vector_color = 15;
@@ -130,45 +161,84 @@ static int play_game()
             }
 
             // Calc ship velocity
-            ship_v[1] += 0.05;
+            ship_v[1] += gravity*render_scale;
+            
             if (engine_on) {
+                speaker_freq(20);
+
                 fuel -= 0.125;
                 if (fuel <= 0) {
                     fuel = 0; 
                 } else {
-                    ship_v[0] += engine_pwr * sin(angle);
-                    ship_v[1] -= engine_pwr * cos(angle);
+                    ship_v[0] += render_scale * engine_pwr * sin(angle);
+                    ship_v[1] -= render_scale * engine_pwr * cos(angle);
                 }
+            } else if (!dead) {
+                speaker_freq(0);
             }
             // Dead ship
-            if (ship_r[1] >= SCREEN_H - 25*ship_zoom) {
+            if (ship_r[1] >= SCREEN_H - 25*render_scale) {
+
+                //play_explosion
+                int elapsed = 0;
+                while (elapsed < 400) {
+                    speaker_freq(400-elapsed);
+                    rest(10);
+                    elapsed += 10;
+                }
+                speaker_freq(5);
+                rest(300);
+                speaker_freq(0);
+
+
                 dead = 1;
                 fuel = 100;
+                gravity = 0.05;
                 score = 0;
             }
 
             // Warp
-            if (ship_r[0] < 0 - 5*ship_zoom) { ship_r[0] = SCREEN_W; }
-            if (ship_r[0] > SCREEN_W + 5*ship_zoom) { ship_r[0] = 0 - 5*ship_zoom; }
+            if (ship_r[0] < 0 - 5*render_scale) { ship_r[0] = SCREEN_W; }
+            if (ship_r[0] > SCREEN_W + 5*render_scale) { ship_r[0] = 0 - 5*render_scale; }
 
             // platform colision
             if (
                 ship_r[0] >= platform_start &&
                 ship_r[0] <= platform_end &&
-                ship_r[1] >= SCREEN_H-45*ship_zoom &&
-                ship_r[1] <= SCREEN_H-42*ship_zoom
+                ship_r[1] >= SCREEN_H-45*render_scale &&
+                ship_r[1] <= SCREEN_H-42*render_scale
                 ) {
+
                 ship_v[1] = -1 * ship_v[1]/2;
                 ship_v[0] = ship_v[0]/2;
-                ship_r[1] = SCREEN_H-45*ship_zoom;
+                ship_r[1] = SCREEN_H-45*render_scale;
+
+                speaker_freq(400);
+                rest(10);
+                speaker_freq(0);
 
                 if (
-                    ship_v[0] <= 0.0005 &&
-                    ship_v[1] <= 0.0005 
+                    fabs(ship_v[0]) <= 1 &&
+                    fabs(ship_v[1]) <= 1 
                     ) {
+                        // play hopefully "cool" jingle
+                        note(523, 150); 
+                        note(659, 150);
+                        note(784, 150);
+                        note(1046, 200);
+                        note(0, 100);
+                        note(784, 200);
+
                         angle = 0;
+                        fuel = 100;
                         landed = 1;
-                        score++;
+
+                        gravity=gravity + 0.025;
+                        if (gravity > 0.05*4) {
+                            gravity = 0.05*4;
+                        }
+
+                        score++;    
                         if (score > hi_score) {
                             hi_score = score;
                         }
@@ -189,13 +259,14 @@ static int play_game()
             
             for (int i = 0; i < 7 ;i++) {
                 rotated_ship_sprite[i][0] = 
-                    ship_zoom * current_sprite[i][0]*cos(angle) -
-                    ship_zoom * current_sprite[i][1]*sin(angle);
+                    render_scale * current_sprite[i][0]*cos(angle) -
+                    render_scale * current_sprite[i][1]*sin(angle);
                 rotated_ship_sprite[i][1] = 
-                    ship_zoom * current_sprite[i][0]*sin(angle) +
-                    ship_zoom * current_sprite[i][1]*cos(angle);
+                    render_scale * current_sprite[i][0]*sin(angle) +
+                    render_scale * current_sprite[i][1]*cos(angle);
             }
         }
+
 
 
         // Clear buffer
@@ -207,23 +278,23 @@ static int play_game()
         }
 
         // Not a moon
-        circle(buffer, SCREEN_W-22*ship_zoom, 5*ship_zoom, ship_zoom*4, vector_color);
-        circle(buffer, SCREEN_W-20*ship_zoom, 8*ship_zoom, ship_zoom*10, vector_color);
+        circle(buffer, SCREEN_W-9*render_scale*gravity*20, 2*render_scale*gravity*20, render_scale*2*gravity*20, vector_color);
+        circle(buffer, SCREEN_W-10*render_scale*gravity*20, 4*render_scale*gravity*20, render_scale*5*gravity*20, vector_color);
 
         // Ground
         for (int i=0; i<=SCREEN_W/10 - 1; i++) {
-            if (i*10+10 > SCREEN_W) { i = SCREEN_W/10 - 1; }
+            if ((i*10+10)*render_scale > SCREEN_W) { i = SCREEN_W/10 - 1; }
             line(buffer,
-                i*10,
-                SCREEN_H - (25*ship_zoom + terrain[i]),
-                (i+1)*10, 
-                SCREEN_H - (25*ship_zoom + terrain[i+1]),
+                i*10*render_scale,
+                SCREEN_H - (25 + terrain[i])*render_scale,
+                (i+1)*10*render_scale, 
+                SCREEN_H - (25 + terrain[i+1])*render_scale,
                 vector_color);
         }
 
         // Platform
-        line(buffer, platform_start, SCREEN_H - 40*ship_zoom, platform_end, SCREEN_H - 40*ship_zoom, vector_color);
-        line(buffer, platform_start, SCREEN_H - 40*ship_zoom + 1, platform_end, SCREEN_H - 40*ship_zoom + 1, vector_color);
+        line(buffer, platform_start, SCREEN_H - 40*render_scale, platform_end, SCREEN_H - 40*render_scale, vector_color);
+        line(buffer, platform_start, SCREEN_H - 40*render_scale + 1, platform_end, SCREEN_H - 40*render_scale + 1, vector_color);
 
         // Draw ship sprite
         if (!dead) {
@@ -249,12 +320,13 @@ static int play_game()
 
         }
 
-        textprintf_ex(buffer, font, 0, SCREEN_H - 8 - text_height(font), 
+        textprintf_ex(buffer, font, 0, SCREEN_H - 4 - text_height(font), 
             makecol(255,255,255), -1, "Score: %d       Fuel: %.1f", score, fuel);
         
-        //textprintf_ex(buffer, font, SCREEN_W - 8*44, SCREEN_H - 8 - text_height(font), 
-        //    makecol(255,255,255), -1, "Move ship: Arrow keys, Restart: enter/space");
-
+        if (SCREEN_W > 320) {
+            textprintf_ex(buffer, font, SCREEN_W - 8*44, SCREEN_H - 4 - text_height(font), 
+                makecol(255,255,255), -1, "Move ship: Arrow keys, Restart: enter/space");
+        }
         // Draw to screen
         blit(buffer, screen, 0, 0, 0, 0, SCREEN_W, SCREEN_H);
 
@@ -286,7 +358,9 @@ int main(int argc, char *argv[])
     install_timer();
 
     set_color_depth(8);
-    if (set_gfx_mode(GFX_VESA1, 640, 480, 0, 0) != 0) {
+
+    if (set_gfx_mode(GFX_VESA1, 800, 600, 0, 0) != 0) {
+    //if (set_gfx_mode(GFX_VESA1, 640, 480, 0, 0) != 0) {
     //if (set_gfx_mode(GFX_VGA, 320, 200, 0, 0) != 0) {
         allegro_message("Unable to set graphics mode\n%s\n", allegro_error);
         return 1;
@@ -304,6 +378,7 @@ int main(int argc, char *argv[])
     destroy_bitmap(buffer);
     set_gfx_mode(GFX_TEXT, 0,0,0,0);
     usage();
+    speaker_freq(0);
     return 0;
 }
 

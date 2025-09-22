@@ -6,11 +6,16 @@ VENDOR    = vendor
 CFLAGS    = -DHAVE_STDBOOL_H=1 -fgnu89-inline -Ivendor/allegro-4.2.2-xc/include
 LDFLAGS   = -Lvendor/allegro-4.2.2-xc/lib/djgpp -lalleg
 
-BIN       = main.exe
+BIN       = vecland.exe
 SRCDIR    = src
 OBJDIR    = obj
 DISTDIR   = dist
 STATICDIR = static
+VGA       = true
+#SVGA1		 = true
+#SVGA2		 = true
+
+DJGPP_CC  = /usr/local/djgpp/bin/i586-pc-msdosdjgpp-gcc
 
 # Static files, e.g. the readme.txt file, that get copied straight to
 # the dist directory.
