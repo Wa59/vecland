@@ -9,6 +9,25 @@ int get_random(int min, int max){
    return min + (rand() % (max-min+1));
 }
 
+int get_terrain_height_below_ship(float ship_x, int terrain[]) {
+    int terrain_index = (int)(ship_x/10);
+    if (terrain_index < 0) {
+        terrain_index = 0;
+    }
+    if (terrain_index > (SCREEN_W/10)) {
+        terrain_index = SCREEN_W/10;
+    }
+
+    int y1 = terrain[terrain_index];
+    int y2 = terrain[terrain_index + 1];
+    for (int x=0; x<10; x++) {
+        if ( (ship_x >= terrain_index*10) && (ship_x < (terrain_index+1)*10) ) {
+            float t = (ship_x - terrain_index*10) / 10.0;
+            return y1 + t * (y2 - y1);
+        }
+    }    
+}
+
 void speaker_freq(int hz) {
     if (hz == 0) {
         outportb(0x61, inportb(0x61) & 0xFC);
@@ -65,6 +84,7 @@ float last_angle = 0;
 float last_sin = 0;
 float last_cos = 1;
 
+int terrain_h = 0;
 
 BITMAP *buffer;
 
@@ -147,11 +167,7 @@ static int play_game()
         //render_scale = render_scale + zoom_spd;
         //if (render_scale > 8 || render_scale < 1) { zoom_spd = -1 * zoom_spd; }
 
-        //if (vector_color == 7) {
-            vector_color = 15;
-        //} else {
-        //    vector_color = 7;
-        //}
+        vector_color = 15;
 
         if (stars_color == 7) {
             stars_color = 8;
@@ -189,9 +205,13 @@ static int play_game()
             } else if (!dead) {
                 speaker_freq(0);
             }
+            
             // Dead ship
-            if (ship_r[1] >= SCREEN_H - 25*render_scale) {
+            // Get current terrain_height
+            terrain_h = SCREEN_H - (25 + get_terrain_height_below_ship(ship_r[0]/
+                render_scale, terrain)) * render_scale;
 
+            if (ship_r[1] >= terrain_h) {
                 //play_explosion
                 int elapsed = 0;
                 while (elapsed < 400) {
@@ -295,6 +315,7 @@ static int play_game()
         circle(buffer, SCREEN_W-10*render_scale*station_zoom*20, 4*render_scale*station_zoom*20, render_scale*5*station_zoom*20, vector_color);
 
         // Ground
+        // Forces platform to stay on ground
         terrain[ (int) (platform_start/10/render_scale) ] = 14;
         terrain[ (int) (platform_start/10/render_scale) + 1] = 14;
         terrain[ (int) (platform_start/10/render_scale) + 2] = 14;
